@@ -270,3 +270,91 @@ DeviceProcessEvents
 <img width="1212" alt="image" src="https://github.com/aktran321/azuki-threat-hunt/blob/main/Threat%20Hunt%20Azuki/lateral%20movement.png">
 
 The attacker uses (Flag 20) `mstsc.exe` to launch Windows Remote Desktop Client to connect to the machine at (Flag 19)`10.1.0.188`.
+
+
+## 🔎 Threat Hunt Conclusion Summary
+
+The threat hunt conducted on the azuki-sl endpoint identified a full end-to-end attacker kill chain beginning with an external compromise and progressing through reconnaissance, defense evasion, credential theft, persistence, lateral movement, and data exfiltration.
+
+The initial access occurred on 2025-11-19 at 18:36:18 UTC, when the user account kenji.sato successfully authenticated from an external IP address (88.97.178.12), indicating unauthorized remote access from outside the corporate network perimeter.
+
+Following access, the attacker performed local reconnaissance using native Windows utilities (ipconfig, arp) to enumerate network configuration and internal hosts. The attacker then established a hidden staging directory at:
+
+```
+C:\ProgramData\WindowsCache
+```
+
+The directory was concealed using attrib +h +s and subsequently excluded from Windows Defender scanning. Additionally, file extension exclusions (.exe, .ps1, .bat) and temporary folder exclusions were added to evade detection.
+
+The attacker abused legitimate system binaries (“living off the land” techniques), including:
+
+- certutil.exe to download payloads
+- schtasks.exe to establish persistence via a scheduled task
+- net.exe to create a hidden administrator account (support)
+- wevtutil.exe to clear event logs (anti-forensics)
+
+Persistence was achieved through a scheduled task named “Windows Update Check”, which executed a malicious svchost.exe binary located within the hidden staging directory and configured to run as SYSTEM.
+
+Further investigation revealed execution of a credential dumping tool (mm.exe, likely Mimikatz) using:
+
+```
+privilege::debug sekurlsa::logonpasswords
+```
+
+
+This confirms credential harvesting from LSASS memory, exposing plaintext credentials, NTLM hashes, and Kerberos tickets.
+
+Stolen data was compressed into export-data.zip and exfiltrated via a Discord webhook using curl.exe, confirming the abuse of a cloud-based communication platform (discord.com) as the exfiltration channel.
+
+Command-and-control (C2) communication was established with the external IP address:
+
+```
+78.141.196.6:443
+```
+
+
+indicating encrypted outbound traffic over HTTPS.
+
+The attacker also attempted lateral movement using mstsc.exe to connect to the internal host 10.1.0.188, suggesting further expansion objectives within the environment.
+
+## 📌 Overall Assessment
+
+This incident demonstrates a structured and moderately sophisticated intrusion, leveraging:
+
+- Living-off-the-land binaries (LOLBins)
+- Defense evasion through Defender exclusions
+- Credential dumping via memory access
+- Scheduled task persistence
+- Cloud-based data exfiltration
+- Log clearing for anti-forensics
+- Lateral movement via RDP
+
+The attack sequence aligns with multiple MITRE ATT&CK techniques across Initial Access, Persistence, Defense Evasion, Credential Access, Lateral Movement, Command and Control, and Exfiltration.
+
+## 🚨 Impact & Risk
+
+- Compromise of user credentials and potential domain credentials
+- Exposure of sensitive internal data
+- Creation of backdoor administrator access
+- Potential compromise of additional internal systems
+- Destruction of forensic artifacts
+- Given the credential dumping and lateral movement activity, this should be treated as a high-severity incident with possible domain-wide impact.
+
+## 🛡 Recommended Response Actions
+
+1. Immediately isolate affected systems.
+2. Reset credentials for kenji.sato and all accounts found in LSASS memory.
+3. Disable and remove the support administrator account.
+4. Remove scheduled tasks and malicious binaries.
+5. Block outbound communication to 78.141.196.6.
+6. Review lateral movement target 10.1.0.188.
+7. Conduct a domain-wide credential hygiene assessment.
+8. Re-enable and validate Defender exclusions.
+9. Implement egress filtering to prevent webhook-based exfiltration.
+10. Enable enhanced logging and alerting for Defender exclusion changes and scheduled task creation.
+
+## Final Determination
+
+The azuki-sl system was fully compromised through external unauthorized access, followed by credential theft, persistence establishment, internal reconnaissance, lateral movement, and data exfiltration via Discord. The attacker demonstrated clear intent to maintain long-term access and extract sensitive data while actively attempting to erase forensic evidence.
+
+This concludes the threat hunt analysis.
